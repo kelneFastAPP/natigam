@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NATIGAM × FastApp: WMS 3D com IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Paleta: azul-marinho e verde-água da NATIGAM; cores próprias para as três categorias do armazém. */
+:root {
+  --noite: #00112E;      /* fundo, mais escuro que o marinho para o projetor */
+  --marinho: #002169;    /* NATIGAM */
+  --painel: #06204F;
+  --linha: #1D3B70;
+  --agua: #3BD4AE;       /* NATIGAM verde-água: sinais da IA */
+  --texto: #F1F5FA;
+  --suave: #9DAAC2;
+  --mp: #F5B544;         /* matéria-prima (granulados) */
+  --molde: #AAB8CC;      /* moldes (aço) */
+  --pa: #3BD4AE;         /* produto acabado */
+  --alerta: #FF7A59;
+  --fastapp: #2F5BEA;
+  --largo: 'Archivo', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--noite); overflow: hidden; }
+body { color: var(--texto); font-family: var(--largo); font-stretch: 100%; -webkit-font-smoothing: antialiased; }
+
+/* Palco 16:9 de 1920 × 1080, escalado para caber no ecrã */
+#palco { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 50% 50%; overflow: hidden; background: var(--noite); }
+#gl, #gl-alt { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; opacity: 0; pointer-events: none; }
+#gl-alt { object-fit: cover; }
+#veu { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+
+.slide { position: absolute; inset: 0; padding: 150px 140px 120px; visibility: hidden; }
+.slide.ativo { visibility: visible; }
+
+h1, h2 { font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; text-wrap: balance; }
+h1 { font-size: 112px; font-stretch: 112%; }
+h2 { font-size: 76px; font-stretch: 108%; max-width: 1180px; }
+.lead { font-size: 34px; line-height: 1.38; color: var(--suave); max-width: 900px; margin-top: 30px; text-wrap: pretty; }
+.nota { font-size: 22px; color: var(--suave); }
+.exemplo { align-self: flex-start; width: fit-content; display: inline-flex; align-items: center; gap: 10px; font-size: 20px; color: var(--suave); border: 1.5px dashed #4A6596; border-radius: 6px; padding: 6px 12px; }
+.mono { font-family: var(--mono); }
+
+/* Barra de baixo: marcas, progresso e número do slide */
+#base { position: absolute; left: 0; right: 0; bottom: 0; height: 84px; display: flex; align-items: center; justify-content: space-between; padding: 0 140px; pointer-events: none; z-index: 5; }
+#marcas { display: flex; align-items: center; gap: 22px; opacity: 0.85; }
+#marcas img.natigam { height: 22px; }
+#marcas span { font-size: 22px; color: var(--suave); }
+#marcas .fa { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 22px; }
+#marcas .fa img { height: 28px; }
+#contador { font-family: var(--mono); font-size: 22px; color: var(--suave); }
+#progresso { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: rgba(255,255,255,0.06); z-index: 5; }
+#progresso i { display: block; height: 100%; width: 0; background: var(--agua); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+#dica { position: absolute; right: 140px; top: 70px; font-size: 20px; color: var(--suave); z-index: 5; }
+
+/* ---------- 1. capa */
+.s1 { display: flex; flex-direction: column; justify-content: center; padding-left: 160px; }
+.s1 .par { display: flex; align-items: center; gap: 28px; margin-bottom: 46px; }
+.s1 .par img.natigam { height: 46px; }
+.s1 .par .x { font-size: 44px; color: var(--suave); font-weight: 300; }
+.s1 .par .fa { display: flex; align-items: center; gap: 14px; font-size: 44px; font-weight: 700; font-stretch: 100%; }
+.s1 .par .fa img { height: 56px; }
+.s1 h1 { max-width: 1100px; }
+.s1 .lead { max-width: 820px; }
+
+/* ---------- 2. transparência */
+.s2 { display: grid; grid-template-columns: 640px 1fr; gap: 100px; align-content: center; }
+.s2 .quem { border-left: 4px solid var(--agua); padding-left: 40px; }
+.s2 .quem .nome { font-size: 54px; font-weight: 700; font-stretch: 108%; }
+.s2 .quem .papel { font-size: 28px; color: var(--suave); margin-top: 14px; line-height: 1.5; }
+.s2 .quem .papel b { color: var(--texto); font-weight: 600; }
+.s2 dl { display: grid; gap: 34px; }
+.s2 dt { font-size: 30px; font-weight: 700; }
+.s2 dd { font-size: 27px; line-height: 1.45; color: var(--suave); margin-top: 8px; max-width: 860px; }
+
+/* ---------- 3. contexto: fluxo de materiais */
+.fluxo { position: relative; margin-top: 80px; height: 470px; }
+.fluxo .etapa { position: absolute; top: 0; width: 330px; }
+.fluxo .etapa svg { display: block; width: 120px; height: 120px; }
+.fluxo .etapa h3 { font-size: 34px; font-weight: 700; margin-top: 26px; font-stretch: 105%; }
+.fluxo .etapa p { font-size: 24px; line-height: 1.45; color: var(--suave); margin-top: 10px; }
+.fluxo .seta { position: absolute; top: 52px; height: 16px; }
+.fluxo .partilha { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 26px; font-size: 30px; }
+.fluxo .partilha .barra { flex: 1; height: 14px; border-radius: 7px; display: flex; overflow: hidden; }
+.fluxo .partilha .barra i { height: 100%; }
+
+/* ---------- 4. dores */
+.dores { margin-top: 70px; display: grid; gap: 0; max-width: 1500px; }
+.dor { display: grid; grid-template-columns: 70px 640px 1fr; gap: 30px; align-items: center; padding: 26px 0; border-bottom: 1.5px solid var(--linha); }
+.dor svg { width: 54px; height: 54px; }
+.dor b { font-size: 36px; font-weight: 700; font-stretch: 104%; }
+.dor span { font-size: 26px; color: var(--suave); }
+
+/* ---------- 5. camada */
+.camada { position: relative; margin-top: 70px; height: 480px; }
+.no { position: absolute; top: 60px; width: 470px; height: 250px; border-radius: 18px; padding: 34px 36px; }
+.no h3 { font-size: 36px; font-weight: 700; font-stretch: 106%; }
+.no p { font-size: 24px; line-height: 1.45; margin-top: 12px; color: var(--suave); }
+.no.atual { left: 0; background: #0A2350; border: 2px solid #33507F; }
+.no.ponte { left: 660px; width: 300px; top: 105px; height: 160px; text-align: center; border: 2px dashed var(--agua); background: #04263F; }
+.no.ponte h3 { font-size: 30px; }
+.no.ponte p { font-size: 21px; }
+.no.wms { left: 1150px; background: linear-gradient(160deg, #0B3A62, #0B2C55); border: 2px solid var(--agua); box-shadow: 0 0 60px rgba(59,212,174,0.18); }
+.camada svg.fios { position: absolute; inset: 0; overflow: visible; }
+.garantias { position: absolute; left: 0; bottom: 0; display: flex; gap: 22px; }
+.garantia { display: flex; align-items: center; gap: 14px; font-size: 28px; font-weight: 600; padding: 14px 24px; border-radius: 40px; background: rgba(59,212,174,0.1); color: var(--agua); }
+.garantia svg { width: 28px; height: 28px; }
+
+/* ---------- 6 e 8. slides com o 3D à direita (o slide deixa o rato chegar à cena; só a legenda recebe cliques) */
+.slide.s6, .slide.s8 { pointer-events: none; }
+.lado { position: absolute; left: 140px; top: 150px; width: 640px; }
+.lado h2 { font-size: 66px; }
+.lado .lead { font-size: 29px; }
+.legenda3d { margin-top: 46px; display: grid; gap: 14px; }
+.legenda3d button { display: flex; align-items: center; gap: 16px; background: none; border: 1.5px solid var(--linha); color: var(--texto); font: 600 26px var(--largo); padding: 14px 20px; border-radius: 10px; cursor: pointer; text-align: left; pointer-events: auto; }
+.legenda3d button i { width: 22px; height: 22px; border-radius: 4px; flex: none; }
+.legenda3d button.on { border-color: var(--agua); background: rgba(59,212,174,0.08); }
+.legenda3d button:focus-visible { outline: 3px solid var(--agua); outline-offset: 3px; }
+.instrucao { margin-top: 34px; font-size: 22px; color: var(--suave); display: flex; gap: 12px; align-items: center; }
+#tip { position: absolute; z-index: 6; pointer-events: none; min-width: 330px; background: rgba(4,20,48,0.94); border: 1.5px solid var(--agua); border-radius: 12px; padding: 18px 22px; opacity: 0; transform: translate(18px, -50%); box-shadow: 0 18px 40px rgba(0,0,0,0.5); }
+#tip .cat { font-size: 18px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+#tip .cat i { width: 14px; height: 14px; border-radius: 3px; }
+#tip .art { font-size: 26px; font-weight: 700; margin-top: 8px; }
+#tip dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin-top: 12px; font-size: 20px; }
+#tip dt { color: var(--suave); }
+#tip dd { font-family: var(--mono); }
+#tip .ex { margin-top: 12px; font-size: 15px; color: var(--suave); }
+.metros { margin-top: 50px; }
+.metros .n { font-size: 120px; font-weight: 800; font-stretch: 112%; color: var(--agua); line-height: 1; font-variant-numeric: tabular-nums; }
+.metros .u { font-size: 30px; color: var(--texto); margin-top: 8px; }
+
+/* ---------- 7. previsão */
+.s7 { display: grid; grid-template-columns: 560px 1fr; gap: 70px; }
+.s7 .lead { font-size: 29px; }
+.grafico { position: relative; margin-top: 10px; }
+.grafico svg { width: 1000px; height: 600px; overflow: visible; }
+.grafico text { font-family: var(--largo); fill: var(--suave); font-size: 20px; }
+
+/* Notificação da IA (slides 7, 9, 11) */
+.notif { display: flex; gap: 18px; align-items: flex-start; width: 560px; background: #F4F7FB; color: #0B1B36; border-radius: 16px; padding: 20px 24px; box-shadow: 0 22px 50px rgba(0,0,0,0.45); }
+.notif .ic { flex: none; width: 46px; height: 46px; border-radius: 11px; background: var(--marinho); display: grid; place-items: center; }
+.notif .ic img { width: 30px; }
+.notif .topo { display: flex; justify-content: space-between; font-size: 17px; color: #5A6B87; }
+.notif b { display: block; font-size: 25px; margin-top: 4px; font-stretch: 102%; }
+.notif p { font-size: 20px; color: #33445F; margin-top: 4px; line-height: 1.35; }
+.notif.alerta .ic { background: var(--alerta); }
+
+/* ---------- 9. moldes */
+.s9 { display: grid; grid-template-columns: 1fr 760px; gap: 80px; }
+.ficha { background: #0A2350; border: 2px solid #33507F; border-radius: 18px; padding: 40px 44px; margin-top: 50px; }
+.ficha .id { display: flex; justify-content: space-between; align-items: baseline; }
+.ficha .id b { font-size: 44px; font-weight: 800; font-stretch: 110%; }
+.ficha .id span { font-size: 22px; color: var(--suave); }
+.ficha .desc { font-size: 26px; color: var(--suave); margin-top: 6px; }
+.ficha dl { display: grid; grid-template-columns: 260px 1fr; gap: 18px 24px; margin-top: 34px; font-size: 26px; }
+.ficha dt { color: var(--suave); }
+.ciclos { margin-top: 30px; }
+.ciclos .barra { height: 22px; border-radius: 11px; background: #12305F; overflow: hidden; position: relative; }
+.ciclos .barra i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, var(--agua), #F5B544 80%, var(--alerta)); }
+.ciclos .lim { display: flex; justify-content: space-between; font-size: 21px; color: var(--suave); margin-top: 10px; }
+.moldes { margin-top: 50px; display: grid; gap: 22px; }
+.molde { display: grid; grid-template-columns: 150px 1fr 140px; gap: 24px; align-items: center; font-size: 24px; }
+.molde .b { height: 12px; border-radius: 6px; background: #12305F; overflow: hidden; }
+.molde .b i { display: block; height: 100%; width: 0; border-radius: 6px; }
+.molde .loc { font-family: var(--mono); color: var(--suave); font-size: 21px; }
+
+/* ---------- 10. rastreabilidade */
+.pesquisa { margin-top: 60px; width: 1180px; display: flex; align-items: center; gap: 22px; background: #F4F7FB; color: #0B1B36; border-radius: 18px; padding: 26px 32px; font-size: 32px; box-shadow: 0 0 0 6px rgba(59,212,174,0.25); }
+.pesquisa svg { flex: none; }
+.pesquisa .cursor { display: inline-block; width: 3px; height: 34px; background: var(--marinho); vertical-align: -6px; margin-left: 2px; }
+.resposta { margin-top: 34px; width: 1180px; }
+.resposta .linha1 { font-size: 27px; line-height: 1.4; }
+.resposta .linha1 b { color: var(--agua); }
+.resposta table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 24px; }
+.resposta th { text-align: left; font-weight: 600; color: var(--suave); font-size: 20px; padding: 10px 14px; border-bottom: 1.5px solid var(--linha); }
+.resposta td { padding: 14px; border-bottom: 1px solid #13305E; }
+.resposta td.mono { font-size: 22px; }
+.resposta .rodape { display: flex; justify-content: space-between; margin-top: 20px; font-size: 22px; color: var(--suave); }
+.auditoria { position: absolute; right: 140px; top: 330px; width: 340px; font-size: 25px; line-height: 1.45; color: var(--suave); border-left: 4px solid var(--agua); padding-left: 28px; }
+.auditoria b { color: var(--texto); display: block; font-size: 30px; margin-bottom: 10px; }
+
+/* ---------- 11. anomalias e relatório */
+.s11 { display: grid; grid-template-columns: 640px 1fr; gap: 90px; }
+.anomalias { display: grid; gap: 22px; margin-top: 50px; }
+.anomalias .notif { width: 640px; }
+.relatorio { align-self: start; margin-top: 10px; background: #F4F7FB; color: #0B1B36; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 70px rgba(0,0,0,0.5); }
+.relatorio .cab { background: var(--marinho); color: #fff; padding: 22px 32px; display: flex; justify-content: space-between; align-items: center; }
+.relatorio .cab b { font-size: 26px; }
+.relatorio .cab span { font-size: 19px; opacity: .8; }
+.relatorio .corpo { padding: 28px 32px 32px; }
+.relatorio .assunto { font-size: 28px; font-weight: 700; }
+.relatorio .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+.relatorio .kpi { border: 1.5px solid #D5DDE9; border-radius: 12px; padding: 16px 20px; }
+.relatorio .kpi .v { font-size: 44px; font-weight: 800; font-stretch: 108%; color: var(--marinho); font-variant-numeric: tabular-nums; }
+.relatorio .kpi .r { font-size: 19px; color: #4A5B77; margin-top: 2px; }
+.relatorio .acoes { margin-top: 20px; font-size: 21px; color: #33445F; line-height: 1.5; }
+
+/* ---------- 12. antes e depois */
+.dia { display: grid; grid-template-columns: 130px 1fr 1fr; margin-top: 60px; max-width: 1640px; }
+.dia .cab { font-size: 30px; font-weight: 700; padding-bottom: 18px; }
+.dia .cab.antes { color: var(--suave); }
+.dia .cab.depois { color: var(--agua); }
+.dia .h { font-family: var(--mono); font-size: 24px; color: var(--suave); padding: 20px 0; border-top: 1.5px solid var(--linha); }
+.dia .c { font-size: 25px; line-height: 1.35; padding: 20px 30px 20px 0; border-top: 1.5px solid var(--linha); }
+.dia .c.antes { color: #B8C2D4; }
+.dia .c.antes s { text-decoration-color: var(--alerta); }
+.dia .c.depois { color: var(--texto); }
+.dia .c em { font-style: normal; font-family: var(--mono); font-size: 21px; color: var(--suave); margin-left: 8px; }
+.dia .c.depois em { color: var(--agua); }
+
+/* ---------- 13. resultados */
+.slide.s13 { display: flex; flex-direction: column; justify-content: center; padding-bottom: 170px; }
+.resultados { display: grid; grid-template-columns: repeat(4, 1fr); gap: 50px; margin-top: 110px; }
+.res .n { font-size: 132px; font-weight: 800; font-stretch: 115%; line-height: 0.95; color: var(--texto); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res .n small { font-size: 60px; font-weight: 700; color: var(--agua); margin-left: 4px; }
+.res p { font-size: 26px; line-height: 1.4; color: var(--suave); margin-top: 22px; max-width: 360px; }
+.res.certo .n { color: var(--agua); }
+
+/* ---------- 14. proposta */
+.s14 { display: grid; grid-template-columns: 1fr 640px; gap: 90px; }
+.semanas { margin-top: 56px; display: grid; gap: 0; }
+.semana { display: grid; grid-template-columns: 170px 1fr; gap: 24px; padding: 22px 0; border-top: 1.5px solid var(--linha); align-items: baseline; }
+.semana b { font-size: 26px; color: var(--agua); font-weight: 700; }
+.semana span { font-size: 28px; }
+.contacto { align-self: center; background: linear-gradient(160deg, #0B3A62, #0A2350); border: 2px solid var(--agua); border-radius: 22px; padding: 48px 50px; }
+.contacto h3 { font-size: 40px; font-weight: 700; font-stretch: 106%; line-height: 1.12; }
+.contacto p { font-size: 26px; color: var(--suave); line-height: 1.45; margin-top: 16px; }
+.contacto .preencher { margin-top: 30px; font-size: 28px; font-weight: 600; padding: 18px 22px; border: 2px dashed var(--mp); border-radius: 12px; color: var(--mp); }
+.contacto .sem { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 28px; }
+.contacto .sem span { font-size: 22px; padding: 10px 18px; border-radius: 30px; background: rgba(59,212,174,0.12); color: var(--agua); }
+
+@media (prefers-reduced-motion: reduce) { #progresso i { transition: none; } }
+</style>
+</head>
+<body>
+<div id="palco" role="region" aria-label="Apresentação NATIGAM e FastApp">
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <img id="gl-alt" src="assets/armazem-isometrico.png" alt="Vista isométrica de um armazém com estantes e paletes coloridas por categoria" hidden>
+  <div id="veu"></div>
+
+  <!-- 1. Capa -->
+  <section class="slide s1" data-3d="capa" aria-label="Capa">
+    <div class="par" data-e>
+      <img class="natigam" src="assets/logo-natigam-branco.svg" alt="NATIGAM">
+      <span class="x">×</span>
+      <span class="fa"><img src="assets/simbolo-escuro.svg" alt="">FastApp</span>
+    </div>
+    <h1 data-e>O seu armazém, em 3D e com inteligência</h1>
+    <p class="lead" data-e>Um WMS 3D com IA que trabalha por cima do sistema que a NATIGAM já usa. Sem substituir nada, sem migrar dados.</p>
+  </section>
+
+  <!-- 2. Transparência -->
+  <section class="slide s2" aria-label="Transparência">
+    <div class="quem" data-e>
+      <p class="nota" style="margin-bottom:22px">Antes de começarmos</p>
+      <div class="nome">[NOME]</div>
+      <p class="papel"><b>[FUNÇÃO] na NATIGAM</b><br>e fundador da FastApp, agência de soluções digitais e IA</p>
+    </div>
+    <dl>
+      <div data-e><dt>Porque trago esta proposta</dt><dd>Conheço o armazém por dentro e vejo todos os dias onde se perde tempo. A FastApp construiu uma ferramenta que resolve exatamente isso.</dd></div>
+      <div data-e><dt>Como fica separado</dt><dd>A decisão é da direção, com os critérios que a NATIGAM definir. O piloto é gratuito e sem compromisso, e não mexe nas minhas funções.</dd></div>
+      <div data-e><dt>O que peço hoje</dt><dd>Trinta minutos de atenção e uma decisão: testar ou não, numa área do armazém, durante 30 dias.</dd></div>
+    </dl>
+  </section>
+
+  <!-- 3. Contexto da injeção -->
+  <section class="slide s3" aria-label="O contexto da injeção">
+    <h2 data-e>Na injeção, tudo compete pelo mesmo espaço e pelo mesmo tempo</h2>
+    <div class="fluxo">
+      <div class="etapa" style="left:0" data-e>
+        <svg viewBox="0 0 120 120" fill="none" stroke="#F5B544" stroke-width="4"><path d="M24 40 L60 22 L96 40 L96 92 L60 108 L24 92 Z"/><g fill="#F5B544" stroke="none"><circle cx="48" cy="62" r="5"/><circle cx="62" cy="56" r="5"/><circle cx="74" cy="66" r="5"/><circle cx="54" cy="76" r="5"/><circle cx="68" cy="82" r="5"/><circle cx="44" cy="84" r="5"/></g></svg>
+        <h3>Matéria-prima</h3>
+        <p>Granulados e polímeros em big-bags e octabins: PP, PE, ABS, PA, masterbatches, borracha e silicones.</p>
+      </div>
+      <svg class="seta" style="left:350px;width:180px" viewBox="0 0 180 16"><path d="M0 8 H170" stroke="#4A6596" stroke-width="3" stroke-dasharray="10 8"/><path d="M164 2 L176 8 L164 14" fill="none" stroke="#4A6596" stroke-width="3"/></svg>
+      <div class="etapa" style="left:560px" data-e>
+        <svg viewBox="0 0 120 120" fill="none" stroke="#AAB8CC" stroke-width="4"><rect x="18" y="30" width="38" height="60" rx="4"/><rect x="64" y="30" width="38" height="60" rx="4"/><path d="M56 48 H64 M56 72 H64"/><circle cx="37" cy="60" r="9"/><circle cx="83" cy="60" r="9"/></svg>
+        <h3>Moldes</h3>
+        <p>Peças de grande valor, guardadas entre produções. Encontrar o molde certo decide a hora de arranque da máquina.</p>
+      </div>
+      <svg class="seta" style="left:910px;width:180px" viewBox="0 0 180 16"><path d="M0 8 H170" stroke="#4A6596" stroke-width="3" stroke-dasharray="10 8"/><path d="M164 2 L176 8 L164 14" fill="none" stroke="#4A6596" stroke-width="3"/></svg>
+      <div class="etapa" style="left:1120px" data-e>
+        <svg viewBox="0 0 120 120" fill="none" stroke="#3BD4AE" stroke-width="4"><path d="M20 48 L60 32 L100 48 L60 64 Z"/><path d="M20 48 V84 L60 100 V64 M100 48 V84 L60 100"/><path d="M40 40 L80 56"/></svg>
+        <h3>Produto acabado</h3>
+        <p>Caixas e paletes à espera de expedição, com lotes e prazos de clientes de vários setores.</p>
+      </div>
+      <div class="partilha" data-e>
+        <span>Os três partilham o armazém</span>
+        <div class="barra"><i style="width:0;background:var(--mp)" data-largura="38"></i><i style="width:0;background:var(--molde)" data-largura="17"></i><i style="width:0;background:var(--pa)" data-largura="45"></i></div>
+        <span class="nota">proporção ilustrativa</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Dores -->
+  <section class="slide s4" aria-label="As dores típicas">
+    <h2 data-e>Onde um armazém de injeção costuma perder</h2>
+    <div class="dores">
+      <div class="dor" data-e><svg viewBox="0 0 54 54" fill="none" stroke="#FF7A59" stroke-width="3.5"><circle cx="23" cy="23" r="14"/><path d="M33 33 L46 46"/></svg><b>Tempo à procura de material</b><span>Operadores a percorrer corredores enquanto a máquina espera.</span></div>
+      <div class="dor" data-e><svg viewBox="0 0 54 54" fill="none" stroke="#FF7A59" stroke-width="3.5"><path d="M10 44 H44 M14 44 V30 M24 44 V20 M34 44 V36"/><path d="M38 12 L44 18 M44 12 L38 18"/></svg><b>Ruturas de matéria-prima</b><span>Descobertas tarde, resolvidas com encomendas urgentes e mais caras.</span></div>
+      <div class="dor" data-e><svg viewBox="0 0 54 54" fill="none" stroke="#FF7A59" stroke-width="3.5"><rect x="10" y="14" width="34" height="26" rx="3"/><path d="M27 20 V30 M27 34 V35"/></svg><b>Moldes difíceis de localizar</b><span>Arranques atrasados e manutenção feita só quando o molde falha.</span></div>
+      <div class="dor" data-e><svg viewBox="0 0 54 54" fill="none" stroke="#FF7A59" stroke-width="3.5"><path d="M12 18 H42 M12 28 H42 M12 38 H30"/><path d="M36 34 L46 44 M46 34 L36 44"/></svg><b>Inventário que não bate certo</b><span>Diferenças entre o sistema e a estante que só aparecem na contagem.</span></div>
+      <div class="dor" data-e><svg viewBox="0 0 54 54" fill="none" stroke="#FF7A59" stroke-width="3.5"><path d="M16 8 H34 L42 16 V46 H16 Z"/><path d="M22 26 H36 M22 34 H36"/></svg><b>Relatórios manuais</b><span>Horas em folhas de cálculo para saber o que já devia estar à vista.</span></div>
+    </div>
+  </section>
+
+  <!-- 5. A solução: camada por cima -->
+  <section class="slide s5" aria-label="A solução">
+    <h2 data-e>Uma camada inteligente por cima do sistema atual</h2>
+    <div class="camada">
+      <svg class="fios" viewBox="0 0 1640 480">
+        <path id="fio1" d="M470 185 H660" stroke="#3BD4AE" stroke-width="3" stroke-dasharray="8 8" fill="none"/>
+        <path id="fio2" d="M960 185 H1150" stroke="#3BD4AE" stroke-width="3" stroke-dasharray="8 8" fill="none"/>
+        <g id="pacotes"></g>
+      </svg>
+      <div class="no atual" data-e><h3>Sistema NATIGAM</h3><p>Continua a ser a fonte de verdade: artigos, lotes, encomendas e stock. Nada muda para quem o usa.</p></div>
+      <div class="no ponte" data-e><h3>Integração</h3><p>Só leitura dos dados existentes</p></div>
+      <div class="no wms" data-e><h3>WMS 3D + IA</h3><p>Armazém em 3D, previsões, alertas, pesquisa em linguagem natural e relatórios automáticos.</p></div>
+      <div class="garantias" data-e>
+        <span class="garantia"><svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 14 L12 20 L22 8"/></svg>Zero migração</span>
+        <span class="garantia"><svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 14 L12 20 L22 8"/></svg>Zero risco para o sistema atual</span>
+        <span class="garantia"><svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 14 L12 20 L22 8"/></svg>Pode desligar-se a qualquer momento</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Armazém em 3D (destaque) -->
+  <section class="slide s6" data-3d="interativo" aria-label="Armazém em 3D">
+    <div class="lado">
+      <h2 data-e>Todo o armazém, num ecrã</h2>
+      <p class="lead" data-e>Cada palete no sítio onde está, colorida pelo que contém. Passe o rato para ver artigo, lote e quantidade.</p>
+      <div class="legenda3d" data-e>
+        <button data-cat="mp"><i style="background:var(--mp)"></i>Matéria-prima</button>
+        <button data-cat="molde"><i style="background:var(--molde)"></i>Moldes</button>
+        <button data-cat="pa"><i style="background:var(--pa)"></i>Produto acabado</button>
+      </div>
+      <p class="instrucao" data-e>Arraste para rodar o armazém. Use a roda do rato para aproximar.</p>
+      <p class="exemplo" data-e style="margin-top:26px">Armazém e dados de exemplo, não são dados da NATIGAM</p>
+    </div>
+  </section>
+
+  <!-- 7. Previsão de matéria-prima -->
+  <section class="slide s7" aria-label="Previsão de matéria-prima com IA">
+    <div>
+      <h2 data-e style="font-size:66px">A IA avisa antes de faltar matéria-prima</h2>
+      <p class="lead" data-e>Lê o consumo real das ordens de fabrico, projeta as próximas semanas e diz quando encomendar, com prazo de fornecedor incluído.</p>
+      <p class="exemplo" data-e style="margin-top:34px">Valores de exemplo</p>
+    </div>
+    <div class="grafico" data-e>
+      <svg id="graf" viewBox="0 0 1000 600"></svg>
+      <div class="notif alerta" id="notif-pp" style="position:absolute;right:0;top:618px;width:640px;opacity:0">
+        <div class="ic"><img src="assets/simbolo-escuro.svg" alt=""></div>
+        <div style="flex:1"><div class="topo"><span>WMS 3D · Previsão</span><span>agora</span></div><b>Encomendar 2 t de PP até 14 de novembro</b><p>Ao ritmo atual, o stock de PP homopolímero chega ao mínimo a 26 de novembro. O fornecedor entrega em 10 dias.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. Slotting -->
+  <section class="slide s8" data-3d="slotting" aria-label="Arrumação otimizada">
+    <div class="lado">
+      <h2 data-e>Material de alta rotação, mais perto da produção</h2>
+      <p class="lead" data-e>A IA vê o que sai mais vezes e propõe novas posições. Menos metros por dia, menos empilhadores a cruzar o armazém.</p>
+      <div class="metros" data-e><div class="n" id="metros">0</div><div class="u">metros poupados por dia</div></div>
+      <p class="exemplo" data-e style="margin-top:34px">Simulação com dados de exemplo</p>
+    </div>
+  </section>
+
+  <!-- 9. Moldes -->
+  <section class="slide s9" aria-label="Gestão de moldes">
+    <div>
+      <h2 data-e style="font-size:66px">Cada molde localizado, com a manutenção à frente da avaria</h2>
+      <div class="ficha" data-e>
+        <div class="id"><b>Molde M-118</b><span class="mono">Estante C-02-1</span></div>
+        <p class="desc">Tampa roscada 38 mm, 4 cavidades</p>
+        <div class="ciclos">
+          <div class="barra"><i id="barra-m118"></i></div>
+          <div class="lim"><span><b class="mono" id="ciclos-m118" style="color:var(--texto)">0</b> ciclos</span><span>manutenção aos 200 000</span></div>
+        </div>
+        <dl><dt>Última manutenção</dt><dd>12 de junho</dd><dt>Ritmo atual</dt><dd>2 900 ciclos por dia</dd></dl>
+      </div>
+    </div>
+    <div>
+      <div class="notif alerta" id="notif-molde" style="width:760px;opacity:0;margin-top:20px">
+        <div class="ic"><img src="assets/simbolo-escuro.svg" alt=""></div>
+        <div style="flex:1"><div class="topo"><span>WMS 3D · Moldes</span><span>agora</span></div><b>Manutenção preventiva do M-118 dentro de 6 dias</b><p>Faltam 17 600 ciclos. Sugestão: parar na troca de turno de sexta-feira.</p></div>
+      </div>
+      <div class="moldes" data-e>
+        <div class="molde"><b>M-118</b><div class="b"><i style="background:var(--alerta)" data-largura="91"></i></div><span class="loc">C-02-1</span></div>
+        <div class="molde"><b>M-204</b><div class="b"><i style="background:var(--mp)" data-largura="74"></i></div><span class="loc">C-03-1</span></div>
+        <div class="molde"><b>M-091</b><div class="b"><i style="background:var(--agua)" data-largura="38"></i></div><span class="loc">C-01-2</span></div>
+        <div class="molde"><b>M-156</b><div class="b"><i style="background:var(--agua)" data-largura="22"></i></div><span class="loc">Máquina 7</span></div>
+        <div class="molde"><b>M-077</b><div class="b"><i style="background:var(--mp)" data-largura="63"></i></div><span class="loc">C-04-3</span></div>
+      </div>
+      <p class="nota" data-e style="margin-top:26px">Ciclos usados até à próxima manutenção. Moldes e valores de exemplo.</p>
+    </div>
+  </section>
+
+  <!-- 10. Rastreabilidade -->
+  <section class="slide s10" aria-label="Rastreabilidade de lotes">
+    <h2 data-e>Do lote à encomenda, em segundos</h2>
+    <div class="pesquisa" data-e>
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" stroke="#002169" stroke-width="3.5"><circle cx="14" cy="14" r="10"/><path d="M22 22 L31 31"/></svg>
+      <span><span id="pergunta"></span><span class="cursor" id="cursor"></span></span>
+    </div>
+    <div class="resposta" id="resposta" style="opacity:0">
+      <p class="linha1">O lote <b class="mono">PP-2610-07</b> (granulado PP homopolímero, 1 000 kg) entrou em 3 ordens de fabrico e chegou a 4 encomendas:</p>
+      <table>
+        <thead><tr><th>Encomenda</th><th>Cliente</th><th>Peça</th><th>Quantidade</th><th>Expedida</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">ENC-0871</td><td>Cliente A (automóvel)</td><td>Conector 6 vias</td><td>12 000 un.</td><td>21 out.</td></tr>
+          <tr><td class="mono">ENC-0874</td><td>Cliente B (alimentar)</td><td>Tampa roscada 38 mm</td><td>40 000 un.</td><td>22 out.</td></tr>
+          <tr><td class="mono">ENC-0879</td><td>Cliente A (automóvel)</td><td>Suporte de cablagem</td><td>8 500 un.</td><td>24 out.</td></tr>
+          <tr><td class="mono">ENC-0883</td><td>Cliente C (eletrodomésticos)</td><td>Pega frontal</td><td>6 000 un.</td><td>em armazém</td></tr>
+        </tbody>
+      </table>
+      <div class="rodape"><span>Resposta em <span id="tempo-resp">1,8</span> s. Exportável em PDF para auditoria.</span><span>Encomendas e clientes de exemplo</span></div>
+    </div>
+    <div class="auditoria" data-e><b>Auditorias sem pânico</b>Clientes do setor automóvel e alimentar pedem rastreabilidade completa. A resposta passa a estar a uma pergunta de distância.</div>
+  </section>
+
+  <!-- 11. Anomalias e relatórios -->
+  <section class="slide s11" aria-label="Anomalias e relatórios automáticos">
+    <div>
+      <h2 data-e style="font-size:62px">A IA encontra o que ninguém teve tempo de ver</h2>
+      <div class="anomalias">
+        <div class="notif" data-n><div class="ic"><img src="assets/simbolo-escuro.svg" alt=""></div><div style="flex:1"><div class="topo"><span>Stock parado</span><span>08:02</span></div><b>14 paletes de ABS sem movimento há 120 dias</b><p>Cerca de 9 800 € imobilizados na estante E-06.</p></div></div>
+        <div class="notif alerta" data-n><div class="ic"><img src="assets/simbolo-escuro.svg" alt=""></div><div style="flex:1"><div class="topo"><span>Divergência</span><span>10:15</span></div><b>B-03-2: 3 paletes no sistema, 2 na estante</b><p>Lote PA-2610-12. Pedido de verificação enviado ao armazém.</p></div></div>
+        <div class="notif" data-n><div class="ic"><img src="assets/simbolo-escuro.svg" alt=""></div><div style="flex:1"><div class="topo"><span>Consumo fora do padrão</span><span>14:40</span></div><b>PA6 com 30 % FV a +40 % da média</b><p>Últimas 2 semanas face às 8 anteriores. Confirmar com a produção.</p></div></div>
+      </div>
+      <p class="exemplo" data-e style="margin-top:28px">Alertas e valores de exemplo</p>
+    </div>
+    <div class="relatorio" data-e>
+      <div class="cab"><b>Resumo semanal para a direção</b><span>todas as segundas, 8h00</span></div>
+      <div class="corpo">
+        <p class="assunto">Armazém: semana 44</p>
+        <div class="kpis">
+          <div class="kpi"><div class="v" data-conta="98.4" data-dec="1" data-suf=" %">0</div><div class="r">precisão do inventário</div></div>
+          <div class="kpi"><div class="v" data-conta="2" data-dec="0" data-suf="">0</div><div class="r">ruturas evitadas com antecedência</div></div>
+          <div class="kpi"><div class="v" data-conta="11" data-dec="0" data-suf=" h">0</div><div class="r">de procura poupadas</div></div>
+          <div class="kpi"><div class="v" data-conta="9800" data-dec="0" data-suf=" €">0</div><div class="r">em stock parado a rever</div></div>
+        </div>
+        <p class="acoes">Ações sugeridas: rever o ABS parado, corrigir a divergência em B-03-2 e antecipar a manutenção do molde M-118.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12. Antes e depois -->
+  <section class="slide s12" aria-label="Antes e depois">
+    <h2 data-e>Um dia típico no armazém</h2>
+    <div class="dia">
+      <div></div><div class="cab antes" data-e>Hoje</div><div class="cab depois" data-e>Com o WMS 3D</div>
+      <div class="h" data-l>07:30</div><div class="c antes" data-l>Procurar o big-bag de PA6 pelos corredores<em>20 min</em></div><div class="c depois" data-l>Ecrã indica B-04-2, nível 2<em>2 min</em></div>
+      <div class="h" data-l>09:00</div><div class="c antes" data-l>Molde M-204 não está onde devia; máquina parada<em>45 min</em></div><div class="c depois" data-l>Molde localizado e preparado na véspera<em>0 min</em></div>
+      <div class="h" data-l>11:30</div><div class="c antes" data-l>Falta de masterbatch descoberta na hora de produzir</div><div class="c depois" data-l>Alerta recebido há 12 dias; encomenda já entregue</div>
+      <div class="h" data-l>15:00</div><div class="c antes" data-l>Cliente pede rastreio de um lote: meia tarde em papéis<em>3 h</em></div><div class="c depois" data-l>Pergunta escrita, relatório exportado<em>5 min</em></div>
+      <div class="h" data-l>17:30</div><div class="c antes" data-l>Relatório de stock feito à mão para a direção<em>1 h</em></div><div class="c depois" data-l>Resumo automático já na caixa de correio<em>0 min</em></div>
+    </div>
+    <p class="exemplo" data-e style="margin-top:30px">Cenário ilustrativo</p>
+  </section>
+
+  <!-- 13. Resultados esperados -->
+  <section class="slide s13" aria-label="Resultados esperados">
+    <h2 data-e>O que esperamos medir no piloto</h2>
+    <div class="resultados">
+      <div class="res" data-e><div class="n"><span data-conta="10" data-dec="0">0</span><small>h</small></div><p>por semana poupadas em procura, contagens e relatórios</p></div>
+      <div class="res" data-e><div class="n">−<span data-conta="30" data-dec="0">0</span><small>%</small></div><p>de ruturas de matéria-prima, com alertas antecipados</p></div>
+      <div class="res" data-e><div class="n"><span data-conta="98" data-dec="0">0</span><small>%</small></div><p>de precisão do inventário, com divergências detetadas no dia</p></div>
+      <div class="res certo" data-e><div class="n"><span data-conta="0" data-dec="0">0</span></div><p>alterações ao sistema atual. Este número é garantido.</p></div>
+    </div>
+    <p class="exemplo" data-e style="margin-top:80px">Estimativas para discussão. Os valores reais medem-se nos 30 dias do piloto.</p>
+  </section>
+
+  <!-- 14. Proposta -->
+  <section class="slide s14" aria-label="Proposta e próximo passo">
+    <div>
+      <h2 data-e>Piloto gratuito de 30 dias, numa área do armazém</h2>
+      <div class="semanas">
+        <div class="semana" data-e><b>Semana 1</b><span>Ligação ao sistema atual, só em leitura, e escolha da área</span></div>
+        <div class="semana" data-e><b>Semana 2</b><span>Área do piloto em 3D, com localização de cada palete e molde</span></div>
+        <div class="semana" data-e><b>Semana 3</b><span>Previsão de matéria-prima, alertas e pesquisa de lotes</span></div>
+        <div class="semana" data-e><b>Semana 4</b><span>Resultados medidos e apresentados à direção</span></div>
+      </div>
+    </div>
+    <div class="contacto" data-e>
+      <h3>Próximo passo: escolher a área e marcar 45 minutos de arranque técnico</h3>
+      <p>Integrado ao sistema atual. Sem custos, sem compromisso e sem migração.</p>
+      <div class="sem"><span>Gratuito</span><span>Só leitura</span><span>Sem compromisso</span></div>
+      <div class="preencher">Contacto: [PREENCHER]</div>
+    </div>
+  </section>
+
+  <div id="tip" role="tooltip"></div>
+  <p id="dica">Setas ou espaço para avançar. F para ecrã inteiro.</p>
+  <div id="base">
+    <div id="marcas"><img class="natigam" src="assets/logo-natigam-branco.svg" alt="NATIGAM"><span>×</span><span class="fa"><img src="assets/simbolo-escuro.svg" alt="">FastApp</span></div>
+    <div id="contador">01 / 14</div>
+  </div>
+  <div id="progresso"><i></i></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const REDUZIR = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const palco = document.getElementById('palco');
+const slides = [...document.querySelectorAll('.slide')];
+const TOTAL = slides.length;
+const CAPTURA = location.hash === '#captura';   // usado só para gerar a imagem estática do armazém
+// números à portuguesa, sempre com espaço nos milhares ("9 800", "2 470")
+const num = (v, dec = 0) => v.toLocaleString('pt-PT', { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: 'always' });
+const temGSAP = typeof window.gsap !== 'undefined';
+if (!temGSAP) { // sem internet para o CDN: mostra os slides sem animação
+  window.gsap = { timeline: () => ({ to(){return this}, from(){return this}, fromTo(){return this}, add(){return this}, call(f){f&&f();return this}, set(){return this}, progress(){return this}, kill(){} }), to(){}, from(){}, fromTo(){}, set(){}, killTweensOf(){}, delayedCall(t, f){ f(); } };
+}
+
+// ---------- palco 16:9 escalado
+let escala = 1;
+function ajustar() {
+  escala = Math.min(innerWidth / 1920, innerHeight / 1080);
+  palco.style.transform = `translate(-50%, -50%) scale(${escala})`;
+  if (A3) A3.redimensionar();
+}
+
+// ---------- armazém 3D (Three.js)
+const CORES = { mp: 0xF5B544, molde: 0xAAB8CC, pa: 0x3BD4AE };
+const NOMES = { mp: 'Matéria-prima', molde: 'Moldes', pa: 'Produto acabado' };
+let A3 = null;
+
+function criarArmazem() {
+  if (typeof THREE === 'undefined') return null;
+  const canvas = document.getElementById('gl');
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: CAPTURA });
+  } catch (e) { return null; }
+  if (!renderer.getContext()) return null;
+  renderer.setClearColor(0x00112E, 1);
+
+  const cena = new THREE.Scene();
+  cena.fog = new THREE.Fog(0x00112E, 55, 120);
+  const camara = new THREE.PerspectiveCamera(38, 1920 / 1080, 0.5, 300);
+  cena.add(new THREE.HemisphereLight(0xD6E6FF, 0x061833, 0.75));
+  const sol = new THREE.DirectionalLight(0xFFFFFF, 0.75); sol.position.set(18, 40, 22); cena.add(sol);
+  const luzProd = new THREE.PointLight(0x3BD4AE, 0.9, 40); luzProd.position.set(24, 6, 0); cena.add(luzProd);
+
+  // chão com marcações de corredor
+  const chao = new THREE.Mesh(new THREE.PlaneGeometry(80, 56), new THREE.MeshStandardMaterial({ color: 0x07193A, roughness: 0.95 }));
+  chao.rotation.x = -Math.PI / 2; cena.add(chao);
+  const grelha = new THREE.GridHelper(80, 40, 0x173563, 0x0E2850); grelha.position.y = 0.01; cena.add(grelha);
+
+  // estantes: 6 filas ao longo de X, 8 vãos de 2,8 m, 3 níveis, 2 paletes por vão
+  const FILAS = 6, VAOS = 8, NIVEIS = 3, VAO = 2.8, ALT = [0.12, 1.65, 3.18], X0 = -18;
+  const zFila = (f) => -15 + f * 6;
+  const montanteGeo = new THREE.BoxGeometry(0.1, 4.6, 0.1);
+  const travessaGeo = new THREE.BoxGeometry(VAO, 0.12, 0.08);
+  const nMont = FILAS * (VAOS + 1) * 2, nTrav = FILAS * VAOS * NIVEIS * 2;
+  const montantes = new THREE.InstancedMesh(montanteGeo, new THREE.MeshStandardMaterial({ color: 0x2C4A7C, roughness: 0.6 }), nMont);
+  const travessas = new THREE.InstancedMesh(travessaGeo, new THREE.MeshStandardMaterial({ color: 0x3E6AA8, roughness: 0.5 }), nTrav);
+  const m = new THREE.Matrix4();
+  let im = 0, it = 0;
+  for (let f = 0; f < FILAS; f++) {
+    for (let v = 0; v <= VAOS; v++) for (const dz of [-0.55, 0.55]) { m.makeTranslation(X0 + v * VAO, 2.3, zFila(f) + dz); montantes.setMatrixAt(im++, m); }
+    for (let v = 0; v < VAOS; v++) for (let n = 0; n < NIVEIS; n++) for (const dz of [-0.55, 0.55]) { m.makeTranslation(X0 + v * VAO + VAO / 2, ALT[n] + (n ? -0.05 : 0.02), zFila(f) + dz); travessas.setMatrixAt(it++, m); }
+  }
+  cena.add(montantes, travessas);
+
+  // dados de exemplo por palete
+  let semente = 7;
+  const rnd = () => (semente = (semente * 16807) % 2147483647) / 2147483647;
+  const ARTIGOS = {
+    mp: [['Granulado PP homopolímero', 'kg', 600, 1000], ['Granulado PEAD', 'kg', 500, 1000], ['ABS natural', 'kg', 500, 900], ['PA6 com 30 % FV', 'kg', 400, 750], ['Masterbatch preto', 'kg', 100, 250], ['TPE 60 Shore A', 'kg', 300, 600], ['Silicone LSR', 'kg', 200, 400]],
+    molde: [['Molde M-118, tampa 4 cav.', 'un.', 1, 1], ['Molde M-204, conector 6 vias', 'un.', 1, 1], ['Molde M-091, pega frontal', 'un.', 1, 1], ['Molde M-077, caixa IP55', 'un.', 1, 1], ['Molde M-133, frasco 500 ml', 'un.', 1, 1]],
+    pa: [['Tampa roscada 38 mm', 'un.', 8000, 40000], ['Conector automóvel 6 vias', 'un.', 2000, 12000], ['Caixa técnica IP55', 'un.', 300, 1200], ['Pega para eletrodoméstico', 'un.', 1500, 6000], ['Frasco 500 ml (sopro)', 'un.', 1200, 4800], ['Suporte de cablagem', 'un.', 3000, 9000]],
+  };
+  const slots = [];
+  for (let f = 0; f < FILAS; f++) for (let v = 0; v < VAOS; v++) for (let n = 0; n < NIVEIS; n++) for (const lado of [-0.7, 0.7]) {
+    slots.push({ f, v, n, x: X0 + v * VAO + VAO / 2 + lado, y: ALT[n] + 0.08, z: zFila(f), loc: `${String.fromCharCode(65 + f)}-${String(v + 1).padStart(2, '0')}-${n + 1}` });
+  }
+  // filas A–B matéria-prima, C moldes (níveis baixos) e mistura, D–F produto acabado; vãos 7–8 das filas A–B ficam livres para o slotting
+  const paletes = [];
+  slots.forEach((s, i) => {
+    const livreSlotting = s.f <= 1 && s.v >= 6 && s.n === 0;
+    if (livreSlotting || rnd() < 0.1) { s.livre = true; return; }
+    let cat = s.f <= 1 ? 'mp' : s.f === 2 ? (s.n === 0 ? 'molde' : (rnd() < 0.5 ? 'mp' : 'pa')) : 'pa';
+    if (s.f >= 3 && rnd() < 0.08) cat = 'mp';
+    const lista = ARTIGOS[cat];
+    const a = lista[Math.floor(rnd() * lista.length)];
+    const q = a[2] === a[3] ? a[2] : Math.round((a[2] + rnd() * (a[3] - a[2])) / 50) * 50;
+    const prefixo = cat === 'mp' ? 'MP' : cat === 'pa' ? 'PA' : 'MO';
+    const h = cat === 'molde' ? 0.7 : cat === 'mp' ? 1.0 + rnd() * 0.2 : 0.75 + rnd() * 0.45;
+    paletes.push({ slot: s, cat, artigo: a[0], lote: `${prefixo}-2610-${String(Math.floor(rnd() * 40) + 1).padStart(2, '0')}`, qtd: `${num(q)} ${a[1]}`, h, x: s.x, y: s.y, z: s.z });
+  });
+  const N = paletes.length;
+  const bases = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 0.14, 1.0), new THREE.MeshStandardMaterial({ color: 0x6E5A44, roughness: 0.9 }), N);
+  const cargas = new THREE.InstancedMesh(new THREE.BoxGeometry(1.1, 1, 0.92), new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }), N);
+  const cor = new THREE.Color();
+  const pos = new THREE.Vector3(), esc = new THREE.Vector3(), q0 = new THREE.Quaternion();
+  function colocar(i) {
+    const p = paletes[i];
+    m.makeTranslation(p.x, p.y + 0.07, p.z); bases.setMatrixAt(i, m);
+    pos.set(p.x, p.y + 0.14 + p.h / 2, p.z); esc.set(1, p.h, 1); m.compose(pos, q0, esc); cargas.setMatrixAt(i, m);
+  }
+  const brilho = new Float32Array(N).fill(1);
+  function pintar(i) { cor.setHex(CORES[paletes[i].cat]).multiplyScalar(brilho[i]); cargas.setColorAt(i, cor); }
+  for (let i = 0; i < N; i++) { colocar(i); pintar(i); }
+  cena.add(bases, cargas);
+
+  // zona de injeção (lado da produção) e cais de receção/expedição
+  const maqMat = new THREE.MeshStandardMaterial({ color: 0x1B3C70, roughness: 0.5 });
+  const faixaMat = new THREE.MeshBasicMaterial({ color: 0x3BD4AE });
+  for (let k = 0; k < 4; k++) {
+    const g = new THREE.Group();
+    const corpo = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.9, 1.8), maqMat); corpo.position.y = 0.95; g.add(corpo);
+    const tremonha = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.25, 1, 12), maqMat); tremonha.position.set(1.3, 2.35, 0); g.add(tremonha);
+    const faixa = new THREE.Mesh(new THREE.BoxGeometry(5.25, 0.08, 1.85), faixaMat); faixa.position.y = 1.5; g.add(faixa);
+    g.position.set(18.5, 0, -12 + k * 7.5); g.rotation.y = Math.PI / 2; cena.add(g);
+  }
+  function rotulo(texto, x, z, cor = '#9DAAC2') {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+    const g = c.getContext('2d'); g.font = '600 52px Archivo, Segoe UI, sans-serif'; g.fillStyle = cor; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(texto, 256, 50);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+    s.scale.set(8, 1.5, 1); s.position.set(x, 5.6, z); cena.add(s); return s;
+  }
+  rotulo('Injeção', 18.5, -18.5, '#3BD4AE');
+  rotulo('Receção', -26, -10);
+  rotulo('Expedição', -26, 10);
+  const caisMat = new THREE.MeshStandardMaterial({ color: 0x10306A, roughness: 0.8 });
+  for (const z of [-10, 10]) { const c = new THREE.Mesh(new THREE.BoxGeometry(3, 0.3, 12), caisMat); c.position.set(-26, 0.15, z); cena.add(c); }
+  // faixas de corredor (verde-água tracejado)
+  const faixaCorr = new THREE.MeshBasicMaterial({ color: 0x3BD4AE, transparent: true, opacity: 0.35 });
+  for (let f = 0; f < FILAS - 1; f++) for (let k = 0; k < 18; k++) {
+    const d = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.12), faixaCorr); d.rotation.x = -Math.PI / 2; d.position.set(X0 - 2 + k * 2.1, 0.02, zFila(f) + 3); cena.add(d);
+  }
+
+  // ---------- câmara: órbita à volta de um alvo; o desvio de filme empurra o armazém para a direita do slide
+  const cam = { raio: 48, theta: 0.85, phi: 0.95, alvoX: 0, alvoY: 0, alvoZ: 0, desvio: 0 };
+  function posicionar() {
+    const sp = Math.sin(cam.phi);
+    camara.position.set(cam.alvoX + cam.raio * sp * Math.sin(cam.theta), cam.alvoY + cam.raio * Math.cos(cam.phi), cam.alvoZ + cam.raio * sp * Math.cos(cam.theta));
+    camara.lookAt(cam.alvoX, cam.alvoY, cam.alvoZ);
+    camara.filmOffset = cam.desvio; camara.updateProjectionMatrix();
+  }
+  const PLANOS = {
+    capa: { raio: 58, phi: 0.96, alvoX: -2, alvoY: 0, alvoZ: 0, desvio: -6 },
+    interativo: { raio: 56, phi: 0.9, alvoX: -1, alvoY: 0, alvoZ: 0, desvio: -11 },
+    slotting: { raio: 52, phi: 0.62, theta: 0.35, alvoX: 0, alvoY: 0, alvoZ: -4, desvio: -11 },
+  };
+
+  // ---------- interação: arrastar para rodar, roda para aproximar, rato para ver a palete
+  let modo = null, rodar = 0, arrastando = false, ultX = 0, ultY = 0, sobre = -1, filtro = null;
+  const tip = document.getElementById('tip');
+  const ray = new THREE.Raycaster(), rato = new THREE.Vector2();
+  canvas.addEventListener('pointerdown', (e) => { if (modo !== 'interativo') return; arrastando = true; ultX = e.clientX; ultY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerup', (e) => { arrastando = false; canvas.releasePointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (modo !== 'interativo') return;
+    if (arrastando) {
+      cam.theta -= (e.clientX - ultX) * 0.006 / escala; cam.phi = Math.min(1.35, Math.max(0.35, cam.phi - (e.clientY - ultY) * 0.004 / escala));
+      ultX = e.clientX; ultY = e.clientY; esconderTip(); return;
+    }
+    const r = canvas.getBoundingClientRect();
+    rato.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(rato, camara);
+    const hit = ray.intersectObject(cargas)[0];
+    marcar(hit ? hit.instanceId : -1);
+    if (hit) mostrarTip(hit.instanceId, (e.clientX - palco.getBoundingClientRect().left) / escala, (e.clientY - palco.getBoundingClientRect().top) / escala);
+    else esconderTip();
+  });
+  canvas.addEventListener('pointerleave', () => { marcar(-1); esconderTip(); });
+  canvas.addEventListener('wheel', (e) => { if (modo !== 'interativo') return; e.preventDefault(); cam.raio = Math.min(70, Math.max(22, cam.raio + e.deltaY * 0.02)); }, { passive: false });
+
+  function marcar(i) {
+    if (i === sobre) return;
+    const ant = sobre; sobre = i;
+    if (ant >= 0) pintar(ant);
+    if (i >= 0) { cor.setHex(0xFFFFFF); cargas.setColorAt(i, cor); }
+    cargas.instanceColor.needsUpdate = true;
+  }
+  function mostrarTip(i, x, y) {
+    const p = paletes[i];
+    tip.innerHTML = `<div class="cat"><i style="background:#${CORES[p.cat].toString(16).padStart(6, '0')}"></i>${NOMES[p.cat]}</div><div class="art">${p.artigo}</div>
+      <dl><dt>Lote</dt><dd>${p.lote}</dd><dt>Quantidade</dt><dd>${p.qtd}</dd><dt>Localização</dt><dd>${p.slot.loc}</dd></dl><div class="ex">Dados de exemplo</div>`;
+    const larg = 360;
+    tip.style.left = `${Math.min(x, 1920 - larg - 40)}px`; tip.style.top = `${Math.max(120, Math.min(y, 900))}px`;
+    tip.style.opacity = 1;
+  }
+  function esconderTip() { tip.style.opacity = 0; }
+
+  // destacar uma categoria (legenda e sequência de entrada do slide 6)
+  function destacar(cat) {
+    filtro = cat;
+    const alvo = new Float32Array(N);
+    for (let i = 0; i < N; i++) alvo[i] = !cat || paletes[i].cat === cat ? 1 : 0.18;
+    const de = brilho.slice();
+    const o = { t: 0 };
+    gsap.to(o, { t: 1, duration: REDUZIR ? 0 : 0.5, ease: 'power2.out', onUpdate() { for (let i = 0; i < N; i++) { brilho[i] = de[i] + (alvo[i] - de[i]) * o.t; if (i !== sobre) pintar(i); } cargas.instanceColor.needsUpdate = true; } });
+    document.querySelectorAll('.legenda3d button').forEach((b) => b.classList.toggle('on', b.dataset.cat === cat));
+  }
+
+  // ---------- slotting: paletes de matéria-prima de alta rotação vão para os vãos livres junto à injeção
+  const movidas = [];
+  (() => {
+    const livres = slots.filter((s) => s.livre && s.f <= 1 && s.v >= 6 && s.n === 0);
+    const longe = paletes.map((p, i) => ({ p, i })).filter(({ p }) => p.cat === 'mp' && p.slot.v <= 2 && p.slot.f <= 1).slice(0, livres.length);
+    longe.forEach(({ p, i }, k) => movidas.push({ i, de: { x: p.x, y: p.y, z: p.z }, para: { x: livres[k].x, y: livres[k].y, z: livres[k].z } }));
+  })();
+  const PROD_X = 15.5;
+  const viagensDia = 9; // idas e voltas por palete de alta rotação (exemplo)
+  const metrosDia = Math.round(movidas.reduce((s, mv) => s + 2 * viagensDia * (Math.abs(PROD_X - mv.de.x) - Math.abs(PROD_X - mv.para.x)), 0) / 10) * 10;
+  const linhas = new THREE.Group(); cena.add(linhas);
+  movidas.forEach((mv) => {
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(mv.de.x, 5, mv.de.z), new THREE.Vector3(mv.para.x, 5, mv.para.z)]);
+    const l = new THREE.Line(g, new THREE.LineDashedMaterial({ color: 0x3BD4AE, dashSize: 0.6, gapSize: 0.4, transparent: true, opacity: 0 }));
+    l.computeLineDistances(); linhas.add(l);
+  });
+  let progSlot = 0;
+  function aplicarSlot(t) {
+    progSlot = t;
+    movidas.forEach((mv, k) => {
+      const tk = Math.min(1, Math.max(0, t * 1.6 - k * 0.06));
+      const e = tk < 0.5 ? 2 * tk * tk : 1 - Math.pow(-2 * tk + 2, 2) / 2;
+      const p = paletes[mv.i];
+      p.x = mv.de.x + (mv.para.x - mv.de.x) * e; p.z = mv.de.z + (mv.para.z - mv.de.z) * e;
+      p.y = mv.de.y + (mv.para.y - mv.de.y) * e + Math.sin(Math.PI * e) * 3.2; // sobe por cima das estantes
+      colocar(mv.i);
+    });
+    bases.instanceMatrix.needsUpdate = true; cargas.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---------- ciclo de desenho (só quando um slide 3D está visível)
+  let ativo = false, ultimo = performance.now();
+  function desenhar(agora) {
+    if (!ativo) return;
+    const dt = Math.min(0.05, (agora - ultimo) / 1000); ultimo = agora;
+    if (rodar && !arrastando) cam.theta += rodar * dt;
+    posicionar();
+    renderer.render(cena, camara);
+    requestAnimationFrame(desenhar);
+  }
+  function redimensionar() {
+    const k = Math.min(2, Math.max(1, escala * (window.devicePixelRatio || 1)));
+    renderer.setPixelRatio(1);
+    renderer.setSize(Math.round(1920 * k), Math.round(1080 * k), false);
+    camara.aspect = 1920 / 1080; camara.updateProjectionMatrix();
+  }
+  redimensionar();
+
+  let primeiraVez = true;
+  function entrarModo(novo) {
+    const veu = document.getElementById('veu');
+    // uma mudança de slide rápida não pode deixar animações antigas a competir pela opacidade ou pela câmara
+    gsap.killTweensOf([canvas, veu, cam]);
+    if (!novo) {
+      modo = null; rodar = 0; esconderTip(); marcar(-1);
+      gsap.to(canvas, { opacity: 0, duration: REDUZIR ? 0 : 0.4, onComplete: () => { if (!modo) ativo = false; } });
+      gsap.to(veu, { opacity: 0, duration: 0.3 });
+      canvas.style.pointerEvents = 'none';
+      return;
+    }
+    const anterior = modo; modo = novo;
+    if (!ativo) { ativo = true; ultimo = performance.now(); requestAnimationFrame(desenhar); }
+    canvas.style.pointerEvents = novo === 'interativo' ? 'auto' : 'none';
+    canvas.style.cursor = novo === 'interativo' ? 'grab' : 'default';
+    gsap.to(canvas, { opacity: novo === 'capa' ? 0.9 : 1, duration: REDUZIR ? 0 : 0.6 });
+    veu.style.background = novo === 'capa'
+      ? 'linear-gradient(90deg, rgba(0,17,46,0.96) 0%, rgba(0,17,46,0.82) 42%, rgba(0,17,46,0.1) 75%)'
+      : 'linear-gradient(90deg, rgba(0,17,46,0.97) 0%, rgba(0,17,46,0.9) 34%, rgba(0,17,46,0) 52%)';
+    gsap.to(veu, { opacity: 1, duration: 0.4 });
+    const alvo = PLANOS[novo];
+    rodar = novo === 'capa' && !REDUZIR ? 0.05 : 0;
+    if (novo === 'capa' && primeiraVez && !REDUZIR && !CAPTURA) {
+      // entrada: a câmara voa baixa pelo corredor e sobe até à vista geral
+      primeiraVez = false;
+      Object.assign(cam, { raio: 9, phi: 1.42, theta: 1.57, alvoX: -6, alvoY: 1.6, alvoZ: -12, desvio: 0 });
+      gsap.to(cam, { raio: alvo.raio, phi: alvo.phi, theta: 0.85, alvoX: alvo.alvoX, alvoY: alvo.alvoY, alvoZ: alvo.alvoZ, desvio: alvo.desvio, duration: 5.2, ease: 'power2.inOut' });
+    } else {
+      primeiraVez = false;
+      gsap.to(cam, { ...alvo, theta: alvo.theta ?? (anterior ? cam.theta : 0.85), duration: REDUZIR ? 0 : 1.6, ease: 'power3.inOut' });
+    }
+    if (novo === 'interativo') {
+      aplicarSlot(0);
+      linhas.children.forEach((l) => (l.material.opacity = 0));
+      if (REDUZIR) destacar(null);
+      else {
+        // as paletes acendem por categoria e depois voltam todas
+        const tl = gsap.timeline({ delay: 1.2 });
+        tl.call(() => destacar('mp')).call(() => destacar('molde'), null, '+=1.1').call(() => destacar('pa'), null, '+=1.1').call(() => destacar(null), null, '+=1.1');
+      }
+    } else destacar(null);
+    if (novo === 'slotting') {
+      aplicarSlot(0);
+      const o = { t: 0 };
+      const el = document.getElementById('metros');
+      gsap.to(linhas.children.map((l) => l.material), { opacity: 0.9, duration: 0.4, delay: 1.4 });
+      gsap.to(o, { t: 1, duration: REDUZIR ? 0 : 4.2, delay: REDUZIR ? 0 : 1.8, ease: 'none', onUpdate() { aplicarSlot(o.t); el.textContent = num(Math.round(metrosDia * o.t)); } });
+      if (REDUZIR) { aplicarSlot(1); el.textContent = num(metrosDia); }
+    }
+  }
+  document.querySelectorAll('.legenda3d button').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); destacar(filtro === b.dataset.cat ? null : b.dataset.cat); }));
+
+  return { entrarModo, redimensionar, metrosDia, desenharAgora: () => { posicionar(); renderer.render(cena, camara); }, cam };
+}
+
+// ---------- animações de entrada de cada slide
+const tlAtual = { t: null };
+function contar(el, alvo, dec, suf = '', dur = 1.6) {
+  const o = { v: 0 };
+  const fmt = (v) => num(v, dec) + suf;
+  if (REDUZIR) { el.textContent = fmt(alvo); return; }
+  gsap.to(o, { v: alvo, duration: dur, ease: 'power2.out', onUpdate: () => (el.textContent = fmt(o.v)) });
+}
+
+const extras = {
+  3(s) { s.querySelectorAll('.barra i').forEach((i, k) => gsap.to(i, { width: `${i.dataset.largura}%`, duration: REDUZIR ? 0 : 1.1, delay: REDUZIR ? 0 : 1.6 + k * 0.25, ease: 'power3.out' })); },
+  5(s) {
+    const g = s.querySelector('#pacotes'); g.innerHTML = '';
+    if (REDUZIR) return;
+    // pacotes de dados a correr do sistema atual para o WMS
+    for (let k = 0; k < 6; k++) {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      c.setAttribute('x', 470); c.setAttribute('width', 14); c.setAttribute('height', 14); c.setAttribute('rx', 3); c.setAttribute('y', 178); c.setAttribute('fill', '#3BD4AE');
+      g.appendChild(c);
+      gsap.fromTo(c, { attr: { x: 470 }, opacity: 0 }, { attr: { x: 1150 }, opacity: 1, duration: 2.6, delay: 1.8 + k * 0.45, repeat: -1, repeatDelay: 0.1, ease: 'none' });
+    }
+  },
+  7(s) { desenharGrafico(s); },
+  9(s) {
+    const barra = s.querySelector('#barra-m118'); const n = s.querySelector('#ciclos-m118');
+    gsap.to(barra, { width: '91.2%', duration: REDUZIR ? 0 : 1.8, delay: REDUZIR ? 0 : 0.9, ease: 'power2.out' });
+    gsap.delayedCall(REDUZIR ? 0 : 0.9, () => contar(n, 182400, 0, '', 1.8));
+    s.querySelectorAll('.molde .b i').forEach((i, k) => gsap.to(i, { width: `${i.dataset.largura}%`, duration: REDUZIR ? 0 : 1, delay: REDUZIR ? 0 : 1.2 + k * 0.12 }));
+    gsap.fromTo('#notif-molde', { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: REDUZIR ? 0 : 0.6, delay: REDUZIR ? 0 : 3.0, ease: 'back.out(1.6)' });
+  },
+  10(s) {
+    const texto = 'Em que encomendas foi usado o lote PP-2610-07?';
+    const alvo = s.querySelector('#pergunta'); const resp = s.querySelector('#resposta'); const cursor = s.querySelector('#cursor');
+    alvo.textContent = ''; gsap.set(resp, { opacity: 0, y: 20 });
+    if (REDUZIR) { alvo.textContent = texto; gsap.set(resp, { opacity: 1, y: 0 }); return; }
+    const o = { n: 0 };
+    gsap.to(o, { n: texto.length, duration: 2.4, delay: 1.0, ease: 'none', onUpdate: () => (alvo.textContent = texto.slice(0, Math.round(o.n))) });
+    gsap.to(cursor, { opacity: 0, repeat: 9, yoyo: true, duration: 0.35, delay: 3.4 });
+    gsap.to(resp, { opacity: 1, y: 0, duration: 0.6, delay: 4.6, ease: 'power3.out' });
+    gsap.from(resp.querySelectorAll('tbody tr'), { opacity: 0, x: -20, stagger: 0.15, duration: 0.4, delay: 4.9 });
+  },
+  11(s) {
+    s.querySelectorAll('[data-n]').forEach((n, k) => gsap.fromTo(n, { opacity: 0, x: -60 }, { opacity: 1, x: 0, duration: REDUZIR ? 0 : 0.6, delay: REDUZIR ? 0 : 0.9 + k * 0.9, ease: 'back.out(1.5)' }));
+    s.querySelectorAll('.kpi .v').forEach((v) => gsap.delayedCall(REDUZIR ? 0 : 1.4, () => contar(v, +v.dataset.conta, +v.dataset.dec, v.dataset.suf)));
+  },
+  12(s) { gsap.fromTo(s.querySelectorAll('[data-l]'), { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: REDUZIR ? 0 : 0.4, stagger: REDUZIR ? 0 : 0.12, delay: REDUZIR ? 0 : 0.8 }); },
+  13(s) { s.querySelectorAll('[data-conta]').forEach((v, k) => gsap.delayedCall(REDUZIR ? 0 : 0.8 + k * 0.25, () => contar(v, +v.dataset.conta, +v.dataset.dec, '', 1.8))); },
+};
+
+// Gráfico do slide 7: consumo real, previsão com intervalo e stock projetado até ao mínimo
+function desenharGrafico(s) {
+  const svg = s.querySelector('#graf'); svg.innerHTML = '';
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, at, pai = svg) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); pai.appendChild(e); return e; };
+  const real = [3.1, 3.3, 3.2, 3.6, 3.8, 3.7, 4.1, 4.3];
+  const prev = [4.3, 4.45, 4.6, 4.8, 4.95, 5.1];
+  const X = (i) => 80 + i * 62, Y = (v) => 520 - v * 80;
+  for (let v = 0; v <= 6; v++) { el('line', { x1: 80, x2: 960, y1: Y(v), y2: Y(v), stroke: '#13305E', 'stroke-width': 1.5 }); el('text', { x: 66, y: Y(v) + 7, 'text-anchor': 'end' }).textContent = `${v} t`; }
+  ['set', 'out', 'nov', 'dez'].forEach((mes, k) => (el('text', { x: X(k * 4) + 6, y: 560 }).textContent = mes));
+  el('text', { x: 80, y: 30, style: 'font-size:22px;fill:#F1F5FA;font-weight:600' }).textContent = 'Consumo semanal de PP homopolímero';
+  // barras do consumo real
+  const barras = real.map((v, i) => el('rect', { x: X(i) - 20, width: 40, y: 520, height: 0, rx: 4, fill: '#F5B544' }));
+  // faixa de confiança e linha de previsão
+  const ini = real.length - 1;
+  const cima = prev.map((v, k) => `${X(ini + k)},${Y(v + 0.15 + k * 0.08)}`), baixo = prev.map((v, k) => `${X(ini + k)},${Y(v - 0.15 - k * 0.08)}`).reverse();
+  const faixa = el('polygon', { points: [...cima, ...baixo].join(' '), fill: 'rgba(59,212,174,0.14)', opacity: 0 });
+  const linha = el('polyline', { points: prev.map((v, k) => `${X(ini + k)},${Y(v)}`).join(' '), fill: 'none', stroke: '#3BD4AE', 'stroke-width': 4, 'stroke-dasharray': '12 10' });
+  el('line', { x1: X(ini) + 31, x2: X(ini) + 31, y1: 60, y2: 520, stroke: '#4A6596', 'stroke-width': 2, 'stroke-dasharray': '4 6' });
+  el('text', { x: X(ini) + 42, y: 505 }).textContent = 'previsão';
+  // data limite para encomendar (14 nov), marcada sobre a linha de previsão
+  const kE = 2.6, xE = X(ini + kE), vE = prev[2] + (prev[3] - prev[2]) * (kE - 2);
+  const marca = el('line', { x1: xE, x2: xE, y1: Y(vE) - 14, y2: 520, stroke: '#FF7A59', 'stroke-width': 2.5, 'stroke-dasharray': '6 6', opacity: 0 });
+  const tMarca = el('text', { x: xE, y: Y(vE) - 44, 'text-anchor': 'middle', style: 'fill:#FF7A59;font-weight:600', opacity: 0 }); tMarca.textContent = 'encomendar até 14 nov.';
+  const ponto = el('circle', { cx: xE, cy: Y(vE), r: 9, fill: '#FF7A59', opacity: 0 });
+  const tPrev = el('text', { x: X(ini + 5) + 30, y: Y(prev[5]) + 48, 'text-anchor': 'end', style: 'fill:#3BD4AE', opacity: 0 }); tPrev.textContent = 'previsão da IA';
+
+  const D = REDUZIR ? 0 : 1;
+  barras.forEach((b, i) => gsap.to(b, { attr: { y: Y(real[i]), height: real[i] * 80 }, duration: 0.7 * D, delay: (0.6 + i * 0.09) * D, ease: 'power3.out' }));
+  gsap.fromTo(linha, { opacity: 0 }, { opacity: 1, duration: 0.4 * D, delay: 1.5 * D });
+  gsap.to([faixa, tPrev], { opacity: 1, duration: 0.8 * D, delay: 1.6 * D });
+  gsap.to([marca, tMarca], { opacity: 1, duration: 0.5 * D, delay: 2.5 * D });
+  gsap.to(ponto, { opacity: 1, duration: 0.3 * D, delay: 2.7 * D });
+  if (!REDUZIR) gsap.to(ponto, { attr: { r: 15 }, repeat: -1, yoyo: true, duration: 0.7, delay: 3.4 });
+  gsap.fromTo('#notif-pp', { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6 * D, delay: 3.2 * D, ease: 'back.out(1.6)' });
+}
+
+// ---------- navegação
+let atual = -1, bloqueado = false;
+const contador = document.getElementById('contador');
+const barraProg = document.querySelector('#progresso i');
+const dica = document.getElementById('dica');
+
+function irPara(n) {
+  n = Math.max(0, Math.min(TOTAL - 1, n));
+  if (n === atual) return;
+  const antigo = slides[atual], novo = slides[n];
+  const frente = n > atual;
+  if (antigo) {
+    gsap.killTweensOf(antigo.querySelectorAll('*'));
+    gsap.to(antigo, { opacity: 0, x: frente ? -40 : 40, duration: REDUZIR ? 0 : 0.35, ease: 'power2.in', onComplete: () => { antigo.classList.remove('ativo'); gsap.set(antigo, { x: 0 }); } });
+  }
+  atual = n;
+  novo.classList.add('ativo');
+  gsap.set(novo, { opacity: 1, x: 0 });
+  // título → texto → visual
+  const els = novo.querySelectorAll('[data-e]');
+  if (REDUZIR) gsap.set(els, { opacity: 1, y: 0 });
+  else gsap.fromTo(els, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.7, stagger: 0.14, delay: 0.25, ease: 'power3.out' });
+  if (extras[n + 1]) extras[n + 1](novo);
+  if (A3) A3.entrarModo(novo.dataset['3d'] || null);
+  else if (novo.dataset['3d']) mostrarAlternativa(novo.dataset['3d']);
+  else document.getElementById('gl-alt').hidden = true;
+  contador.textContent = `${String(n + 1).padStart(2, '0')} / ${TOTAL}`;
+  barraProg.style.width = `${((n + 1) / TOTAL) * 100}%`;
+  dica.style.opacity = n === 0 ? 1 : 0;
+  history.replaceState(null, '', `#${n + 1}`);
+}
+
+// Sem WebGL: imagem isométrica estática no lugar da cena
+function mostrarAlternativa(modo) {
+  const img = document.getElementById('gl-alt');
+  img.hidden = false; img.style.opacity = modo === 'capa' ? 0.55 : 1;
+  const veu = document.getElementById('veu');
+  veu.style.background = 'linear-gradient(90deg, rgba(0,17,46,0.97) 0%, rgba(0,17,46,0.88) 38%, rgba(0,17,46,0) 60%)'; veu.style.opacity = 1;
+  if (modo === 'interativo') document.querySelector('.s6 .instrucao').textContent = 'Este ecrã não suporta 3D: vista estática do armazém de exemplo.';
+  if (modo === 'slotting') document.getElementById('metros').textContent = '1 850';
+}
+
+function seguinte() { irPara(atual + 1); }
+function anterior() { irPara(atual - 1); }
+addEventListener('keydown', (e) => {
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); seguinte(); }
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); anterior(); }
+  else if (e.key === 'Home') irPara(0);
+  else if (e.key === 'End') irPara(TOTAL - 1);
+  else if (e.key === 'f' || e.key === 'F') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.();
+  }
+});
+// clique: metade direita avança, metade esquerda recua (exceto no 3D interativo e nos botões)
+palco.addEventListener('click', (e) => {
+  if (e.target.closest('button, a, #gl')) return;
+  const r = palco.getBoundingClientRect();
+  if (e.clientX - r.left > r.width * 0.3) seguinte(); else anterior();
+});
+let toque = null;
+addEventListener('touchstart', (e) => { toque = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+addEventListener('touchend', (e) => {
+  if (!toque) return;
+  const dx = e.changedTouches[0].clientX - toque.x, dy = e.changedTouches[0].clientY - toque.y;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) (dx < 0 ? seguinte : anterior)();
+  toque = null;
+});
+addEventListener('resize', ajustar);
+
+A3 = criarArmazem();
+ajustar();
+if (CAPTURA && A3) {
+  // modo usado para gerar assets/armazem-isometrico.png
+  document.querySelectorAll('.slide, #base, #progresso, #dica').forEach((e) => (e.style.display = 'none'));
+  const c = document.getElementById('gl'); c.style.opacity = 1;
+  Object.assign(A3.cam, { raio: 56, phi: 0.9, theta: 0.85, alvoX: -1, alvoY: 0, alvoZ: 0, desvio: -11 }); // mesmo plano do slide 6
+  A3.desenharAgora();
+  window.capturaPronta = true;
+} else {
+  const inicio = parseInt(location.hash.slice(1), 10);
+  irPara(Number.isFinite(inicio) ? inicio - 1 : 0);
+}
+window.__apresentacao = { irPara, total: TOTAL, tem3D: !!A3, metros: A3 ? A3.metrosDia : null };
+})();
+</script>
+</body>
+</html>
